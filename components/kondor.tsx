@@ -32,7 +32,7 @@ export function KondorButton({ variant = "default", size = "default" }: WalletBu
       if (accounts && accounts.length > 0) {
         localStorage.setItem('walletAddress', accounts[0].address)
         setConnectedWallet(accounts[0].address)
-        router.push('/dashboard')
+        // router.push('/dashboard')
       }
     } catch (error) {
       console.error('Failed to connect wallet:', error)
