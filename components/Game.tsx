@@ -9,11 +9,32 @@ const PIPE_WIDTH = 70;
 const PIPE_GAP = 180;
 const PIPE_SPEED = 1.5;
 const BIRD_RADIUS = 15;
+const POWERUP_DURATION = 5000; // 5 seconds
 
 interface Pipe {
   x: number;
   topHeight: number;
   passed: boolean;
+}
+
+const POWERUP_TYPES = {
+  SHIELD: {
+    color: '#3498db',
+    symbol: '🛡️',
+  },
+  SLOW_TIME: {
+    color: '#9b59b6',
+    symbol: '⏰',
+  },
+  DOUBLE_POINTS: {
+    color: '#f1c40f',
+    symbol: '2️⃣',
+  },
+} as const;
+
+interface PowerUpEffect {
+  type: keyof typeof POWERUP_TYPES;
+  endTime: number;
 }
 
 const Game = () => {
@@ -32,6 +53,7 @@ const Game = () => {
   });
   const pipesRef = useRef<Pipe[]>([]);
   const frameCountRef = useRef(0);
+  const [activeEffects, setActiveEffects] = useState<PowerUpEffect[]>([]);
 
   const createPipe = () => {
     const minHeight = 100;
@@ -46,6 +68,9 @@ const Game = () => {
   };
 
   const checkCollision = () => {
+    const hasShield = activeEffects.some(effect => effect.type === 'SHIELD');
+    if (hasShield) return false;
+
     const bird = birdRef.current;
     const pipes = pipesRef.current;
 
@@ -70,11 +95,21 @@ const Game = () => {
   };
 
   const updateScore = () => {
+    const hasDoublePoints = activeEffects.some(effect => effect.type === 'DOUBLE_POINTS');
+    const pointMultiplier = hasDoublePoints ? 2 : 1;
+
     const bird = birdRef.current;
     pipesRef.current.forEach(pipe => {
       if (!pipe.passed && bird.x > pipe.x + PIPE_WIDTH) {
         pipe.passed = true;
-        setScore(prev => prev + 1);
+        const newScore = score + (1 * pointMultiplier);
+        setScore(newScore);
+        
+        // Activate power-up every 4 pipes
+        if (newScore % 4 === 0) {
+          const type = Object.keys(POWERUP_TYPES)[Math.floor(Math.random() * Object.keys(POWERUP_TYPES).length)] as keyof typeof POWERUP_TYPES;
+          activatePowerUp(type);
+        }
       }
     });
   };
@@ -90,6 +125,11 @@ const Game = () => {
     }
     setScore(0);
     setGameOver(false);
+  };
+
+  const activatePowerUp = (type: keyof typeof POWERUP_TYPES) => {
+    const endTime = Date.now() + POWERUP_DURATION;
+    setActiveEffects(prev => [...prev, { type, endTime }]);
   };
 
   useEffect(() => {
@@ -143,17 +183,31 @@ const Game = () => {
 
     const drawScore = () => {
       ctx.fillStyle = 'white';
-      ctx.font = 'bold 48px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(score.toString(), CANVAS_WIDTH / 2, 80);
       
-      // Draw best score
+      // Score in top right
+      ctx.font = 'bold 48px Arial';
+      ctx.textAlign = 'right';
+      ctx.fillText(score.toString(), CANVAS_WIDTH - 20, 50);
+      
+      // Best score below current score
       ctx.font = 'bold 24px Arial';
-      ctx.fillText(`Best: ${bestScore}`, CANVAS_WIDTH / 2, 120);
+      ctx.fillText(`Best: ${bestScore}`, CANVAS_WIDTH - 20, 80);
+      
+      // Power-up progress in top left
+      ctx.textAlign = 'left';
+      const nextPowerUp = 4 - (score % 4);
+      ctx.fillText(`Next power-up: ${nextPowerUp}`, 20, 50);
     };
 
     const update = () => {
       if (gameOver) return;
+
+      // Update active effects
+      setActiveEffects(prev => prev.filter(effect => effect.endTime > Date.now()));
+
+      // Apply power-up effects
+      const hasSlowTime = activeEffects.some(effect => effect.type === 'SLOW_TIME');
+      const currentSpeed = hasSlowTime ? PIPE_SPEED * 0.5 : PIPE_SPEED;
 
       bird.velocity += bird.gravity;
       bird.y += bird.velocity;
@@ -164,7 +218,7 @@ const Game = () => {
       }
 
       pipes.forEach(pipe => {
-        pipe.x -= PIPE_SPEED;
+        pipe.x -= currentSpeed;
       });
       
       while (pipes.length > 0 && pipes[0].x < -PIPE_WIDTH) {
@@ -180,12 +234,44 @@ const Game = () => {
 
     const draw = () => {
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-      // ctx.fillStyle = '#4dc6ff';
-      // ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      // Add a semi-transparent dark background
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
       drawPipes();
       drawBird();
       drawScore();
+
+      // Draw active effects indicators
+      activeEffects.forEach((effect, index) => {
+        const timeLeft = (effect.endTime - Date.now()) / POWERUP_DURATION;
+        ctx.fillStyle = POWERUP_TYPES[effect.type].color;
+        ctx.fillRect(
+          10, 
+          10 + (index * 30), 
+          50 * timeLeft, 
+          20
+        );
+        ctx.fillStyle = 'white';
+        ctx.font = '14px Arial';
+        ctx.fillText(
+          POWERUP_TYPES[effect.type].symbol,
+          70,
+          25 + (index * 30)
+        );
+      });
+
+      // Draw bird with shield effect if active
+      const hasShield = activeEffects.some(effect => effect.type === 'SHIELD');
+      if (hasShield) {
+        ctx.save();
+        ctx.strokeStyle = POWERUP_TYPES.SHIELD.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(birdRef.current.x, birdRef.current.y, BIRD_RADIUS + 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       if (gameOver) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
