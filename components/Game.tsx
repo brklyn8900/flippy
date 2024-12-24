@@ -37,6 +37,11 @@ interface PowerUpEffect {
   endTime: number;
 }
 
+interface HighScore {
+  name: string;
+  score: number;
+}
+
 const Game = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameLoopRef = useRef<number>();
@@ -54,6 +59,9 @@ const Game = () => {
   const pipesRef = useRef<Pipe[]>([]);
   const frameCountRef = useRef(0);
   const [activeEffects, setActiveEffects] = useState<PowerUpEffect[]>([]);
+  const [showHighScoreEntry, setShowHighScoreEntry] = useState(false);
+  const [playerName, setPlayerName] = useState('');
+  const [highScores, setHighScores] = useState<HighScore[]>([]);
 
   const createPipe = () => {
     const minHeight = 100;
@@ -120,6 +128,15 @@ const Game = () => {
     bird.velocity = 0;
     pipesRef.current = [];
     frameCountRef.current = 0;
+
+    if (score > 6) {
+      const lowestScore = highScores.length === 10 ? highScores[9].score : 0;
+      if (highScores.length < 10 || score > lowestScore) {
+        setShowHighScoreEntry(true);
+        return; // Don't reset game state yet
+      }
+    }
+
     if (score > bestScore) {
       setBestScore(score);
     }
@@ -130,6 +147,36 @@ const Game = () => {
   const activatePowerUp = (type: keyof typeof POWERUP_TYPES) => {
     const endTime = Date.now() + POWERUP_DURATION;
     setActiveEffects(prev => [...prev, { type, endTime }]);
+  };
+
+  const handleHighScoreSubmit = () => {
+    if (playerName.length === 3) {
+      const newHighScore: HighScore = {
+        name: playerName.toUpperCase(),
+        score: score
+      };
+      
+      const newHighScores = [...highScores, newHighScore]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+      
+      setHighScores(newHighScores);
+      setShowHighScoreEntry(false);
+      setPlayerName('');
+      
+      if (score > bestScore) {
+        setBestScore(score);
+      }
+      setScore(0);
+      setGameOver(false);
+    }
+  };
+
+  const handleNameInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase();
+    if (/^[A-Z]*$/.test(value) && value.length <= 3) {
+      setPlayerName(value);
+    }
   };
 
   useEffect(() => {
@@ -280,10 +327,13 @@ const Game = () => {
         ctx.fillStyle = 'white';
         ctx.font = 'bold 48px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Game Over!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+        ctx.fillText('Game Over!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
         ctx.font = 'bold 24px Arial';
-        ctx.fillText(`Score: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 40);
-        ctx.fillText('Click or press SPACE to restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 80);
+        ctx.fillText(`Score: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+
+        if (!showHighScoreEntry) {
+          ctx.fillText('Click or press SPACE to restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
+        }
       }
     };
 
@@ -296,9 +346,9 @@ const Game = () => {
     const handleJump = (e: KeyboardEvent | MouseEvent) => {
       if (e instanceof KeyboardEvent && e.code !== 'Space') return;
       
-      if (gameOver) {
+      if (gameOver && !showHighScoreEntry) {
         resetGame();
-      } else {
+      } else if (!gameOver) {
         bird.velocity = bird.jumpStrength;
       }
     };
@@ -321,21 +371,83 @@ const Game = () => {
   }, [gameOver, score, bestScore]);
 
   return (
-    <div className="relative flex flex-col items-center">
-      <div className="w-full max-w-[480px] flex justify-end mb-4">
-        <KondorButton variant="outline" />
-      </div>
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        className="border-4 border-white rounded-lg"
-      />
-      <div className="w-full max-w-[480px] mt-4 text-center">
-        <div className="text-white font-bold">
-          {gameOver ? 'Game Over - Press SPACE or Click to restart' : 'Press SPACE or Click to jump'}
+    <div className="relative flex flex-row items-start gap-8">
+      <div className="flex flex-col items-center">
+        <div className="w-full max-w-[480px] flex justify-end mb-4">
+          <KondorButton variant="outline" />
+        </div>
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          className="border-4 border-white rounded-lg"
+        />
+        <div className="w-full max-w-[480px] mt-4 text-center">
+          <div className="text-white font-bold">
+            {gameOver ? 'Game Over - Press SPACE or Click to restart' : 'Press SPACE or Click to jump'}
+          </div>
         </div>
       </div>
+
+      {/* High Scores Panel */}
+      <div className="w-48 bg-black/50 border-2 border-white rounded-lg p-4">
+        <h2 className="text-white text-xl font-bold text-center mb-4 border-b-2 border-white/50 pb-2">
+          HIGH SCORES
+        </h2>
+        <div className="space-y-2">
+          {[...Array(10)].map((_, index) => {
+            const highScore = highScores[index];
+            if (!highScore) return (
+              <div key={index} className="text-white/20 font-mono flex justify-between">
+                <span>{index + 1}.</span>
+                <span></span>
+              </div>
+            );
+
+            return (
+              <div 
+                key={index} 
+                className={`text-white font-mono flex justify-between ${
+                  highScore.score === score ? 'text-yellow-400' : ''
+                }`}
+              >
+                <span>
+                  {index + 1}. {highScore.name}
+                </span>
+                <span>
+                  {highScore.score.toString().padStart(6, '0')}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* High Score Entry Modal */}
+      {showHighScoreEntry && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="bg-black/80 p-6 rounded-lg border-2 border-white text-center">
+            <h2 className="text-white text-xl mb-4">New High Score!</h2>
+            <p className="text-white mb-4">Enter your initials:</p>
+            <input
+              type="text"
+              value={playerName}
+              onChange={handleNameInput}
+              maxLength={3}
+              className="w-24 px-3 py-2 rounded bg-white/10 text-white border border-white/30 focus:border-white outline-none text-center text-2xl tracking-widest uppercase"
+              autoFocus
+              placeholder="AAA"
+            />
+            <button
+              onClick={handleHighScoreSubmit}
+              disabled={playerName.length !== 3}
+              className="mt-4 w-full px-4 py-2 bg-white/20 text-white rounded hover:bg-white/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Submit
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
